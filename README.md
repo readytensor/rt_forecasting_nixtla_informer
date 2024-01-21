@@ -22,7 +22,7 @@ Past :x:
 
 Future :x:
 
-Static :xx:
+Static :x:
 
 ---
 
