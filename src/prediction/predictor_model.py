@@ -30,7 +30,8 @@ class Forecaster:
         self,
         data_schema: ForecastingSchema,
         history_forecast_ratio: int = None,
-        history_length: int = None,
+        lags_forecast_ratio: int = None,
+        lags: int = None,
         exclude_insample_y=False,
         decoder_input_size_multiplier: float = 0.5,
         hidden_size: int = 128,
@@ -66,6 +67,13 @@ class Forecaster:
                 Sets the history length depending on the forecast horizon.
                 For example, if the forecast horizon is 20 and the history_forecast_ratio is 10,
                 history length will be 20*10 = 200 samples.
+
+            lags_forecast_ratio (int):
+                Sets the lags parameters depending on the forecast horizon.
+                lags = forecast horizon * lags_forecast_ratio
+                This parameters overides lags parameter and uses the most recent values as lags.
+
+            lags (int): Lags of the target to use as features.
 
             exclude_insample_y (bool): The model skips the autoregressive features y[t-input_size:t] if True.
 
@@ -112,16 +120,20 @@ class Forecaster:
             random_state (int): Sets the underlying random seed at model initialization time.
         """
         self.data_schema = data_schema
+        self.lags = lags
         self.use_exogenous = use_exogenous
         self.random_state = random_state
         self._is_trained = False
         self.kwargs = kwargs
-        self.history_length = history_length
+        self.history_length = None
 
         if history_forecast_ratio:
             self.history_length = (
                 self.data_schema.forecast_length * history_forecast_ratio
             )
+
+        if lags_forecast_ratio:
+            self.lags = lags_forecast_ratio * self.data_schema.forecast_length
 
         stopper = EarlyStopping(
             monitor="train_loss",
@@ -143,7 +155,7 @@ class Forecaster:
 
         models = [
             Informer(
-                input_size=self.history_length,
+                input_size=self.lags,
                 h=data_schema.forecast_length,
                 exclude_insample_y=exclude_insample_y,
                 decoder_input_size_multiplier=decoder_input_size_multiplier,
@@ -220,6 +232,11 @@ class Forecaster:
         all_ids = list(groups_by_ids.groups.keys())
 
         all_series = [groups_by_ids.get_group(id_).reset_index() for id_ in all_ids]
+
+        if self.history_length:
+            for index, series in enumerate(all_series):
+                all_series[index] = series.iloc[-self.history_length :]
+            data = pd.concat(all_series).drop(columns="index")
 
         if self.data_schema.future_covariates:
             data.drop(columns=self.data_schema.future_covariates, inplace=True)
