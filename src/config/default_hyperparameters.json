@@ -1,7 +1,7 @@
 {
   "history_forecast_ratio": 10,
-  "lags_forecast_ratio": 3,
-  "lags": null,
+  "lags_forecast_ratio": null,
+  "lags": 10,
   "max_steps": 2000,
   "kernel_size": 2,
   "learning_rate": 0.001,
