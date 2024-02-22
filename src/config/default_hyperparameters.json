@@ -10,7 +10,8 @@
   "local_scaler_type": "minmax",
   "early_stopping": true,
   "use_exogenous": true,
-  "trainer_kwargs": {"accelerator": "gpu"},
+  "trainer_kwargs": {
+    "accelerator": "gpu"
+  },
   "random_state": 0
-  
 }

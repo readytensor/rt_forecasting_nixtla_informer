@@ -10,11 +10,13 @@ from neuralforecast.models import Informer
 from neuralforecast import NeuralForecast
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
+from logger import get_logger
 
 warnings.filterwarnings("ignore")
 
 
 PREDICTOR_FILE_NAME = "predictor.joblib"
+logger = get_logger(task_name="model")
 
 
 class Forecaster:
@@ -121,6 +123,22 @@ class Forecaster:
         """
         self.data_schema = data_schema
         self.lags = lags
+        self.exclude_insample_y = exclude_insample_y
+        self.decoder_input_size_multiplier = decoder_input_size_multiplier
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        self.factor = factor
+        self.n_head = n_head
+        self.conv_hidden_size = conv_hidden_size
+        self.activation = activation
+        self.encoder_layers = encoder_layers
+        self.decoder_layers = decoder_layers
+        self.distil = distil
+        self.max_steps = max_steps
+        self.learning_rate = learning_rate
+        self.num_lr_decays = num_lr_decays
+        self.batch_size = batch_size
+        self.local_scaler_type = local_scaler_type
         self.use_exogenous = use_exogenous
         self.random_state = random_state
         self._is_trained = False
@@ -153,35 +171,7 @@ class Forecaster:
             if trainer_kwargs.get("accelerator") == "gpu":
                 trainer_kwargs.pop("accelerator")
 
-        models = [
-            Informer(
-                input_size=self.lags,
-                h=data_schema.forecast_length,
-                exclude_insample_y=exclude_insample_y,
-                decoder_input_size_multiplier=decoder_input_size_multiplier,
-                hidden_size=hidden_size,
-                dropout=dropout,
-                factor=factor,
-                n_head=n_head,
-                conv_hidden_size=conv_hidden_size,
-                activation=activation,
-                encoder_layers=encoder_layers,
-                decoder_layers=decoder_layers,
-                distil=distil,
-                max_steps=max_steps,
-                learning_rate=learning_rate,
-                num_lr_decays=num_lr_decays,
-                batch_size=batch_size,
-                random_seed=random_state,
-                **trainer_kwargs,
-            )
-        ]
-
-        self.model = NeuralForecast(
-            models=models,
-            freq=self.map_frequency(data_schema.frequency),
-            local_scaler_type=local_scaler_type,
-        )
+        self.trainer_kwargs = trainer_kwargs
 
     def map_frequency(self, frequency: str) -> str:
         """
@@ -283,6 +273,28 @@ class Forecaster:
 
         return futr_df
 
+    def _validate_lags_and_history_length(self, series_length: int):
+        """
+        Validate the value of lags and that history length is at least double the forecast horizon.
+        If the provided lags value is invalid (too large), lags are set to the largest possible value.
+
+        Args:
+            series_length (int): The length of the history.
+
+        Returns: None
+        """
+        forecast_length = self.data_schema.forecast_length
+        if series_length < 2 * forecast_length:
+            raise ValueError(
+                f"Training series is too short. History should be at least double the forecast horizon. history_length = ({series_length}), forecast horizon = ({forecast_length})"
+            )
+
+        if self.lags >= series_length:
+            self.lags = series_length - 1
+            logger.warning(
+                f"The provided lags value >= available history length. Lags are set to to (history length - 1) = {series_length-1}"
+            )
+
     def fit(
         self,
         history: pd.DataFrame,
@@ -297,9 +309,48 @@ class Forecaster:
 
         history = self.prepare_data(history)
 
-        self.model.fit(df=history)
+        series_length = history.groupby("unique_id")["y"].count().iloc[0]
+
+        self._validate_lags_and_history_length(series_length=series_length)
+
+        models = [
+            Informer(
+                input_size=self.lags,
+                h=self.data_schema.forecast_length,
+                exclude_insample_y=self.exclude_insample_y,
+                decoder_input_size_multiplier=self.decoder_input_size_multiplier,
+                hidden_size=self.hidden_size,
+                dropout=self.dropout,
+                factor=self.factor,
+                n_head=self.n_head,
+                conv_hidden_size=self.conv_hidden_size,
+                activation=self.activation,
+                encoder_layers=self.encoder_layers,
+                decoder_layers=self.decoder_layers,
+                distil=self.distil,
+                max_steps=self.max_steps,
+                learning_rate=self.learning_rate,
+                num_lr_decays=self.num_lr_decays,
+                batch_size=self.batch_size,
+                random_seed=self.random_state,
+                **self.trainer_kwargs,
+            )
+        ]
+
+        self.model = NeuralForecast(
+            models=models,
+            freq=self.map_frequency(self.data_schema.frequency),
+            local_scaler_type=self.local_scaler_type,
+        )
+
+        static_df = None
+        if self.use_exogenous and len(self.data_schema.static_covariates) > 0:
+            static_df = self.generate_static_exogenous(history)
+
+        self.model.fit(df=history, static_df=static_df)
         self._is_trained = True
         self.history = history
+        self.static_df = static_df
 
     def predict(
         self, test_data: pd.DataFrame, prediction_col_name: str

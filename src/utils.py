@@ -4,6 +4,7 @@ import os
 import random
 import tracemalloc
 from typing import Any, Dict, List, Tuple, Union
+import torch
 
 import numpy as np
 import pandas as pd
@@ -199,6 +200,18 @@ def make_serializable(obj: Any) -> Union[int, float, List[Union[int, float]], An
         return json.JSONEncoder.default(None, obj)
 
 
+def get_peak_memory_usage():
+    """
+    Returns the peak memory usage by current cuda device (in MB) if available
+    """
+    if not torch.cuda.is_available():
+        return None
+
+    current_device = torch.cuda.current_device()
+    peak_memory = torch.cuda.max_memory_allocated(current_device)
+    return peak_memory / (1024 * 1024)
+
+
 class TimeAndMemoryTracker(object):
     """
     This class serves as a context manager to track time and
@@ -211,6 +224,10 @@ class TimeAndMemoryTracker(object):
     def __enter__(self):
         tracemalloc.start()
         self.start_time = time.time()
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()  # Reset CUDA memory stats
+            torch.cuda.empty_cache()  # Clear CUDA cache
+
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -218,7 +235,13 @@ class TimeAndMemoryTracker(object):
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
+        cpu_memory = peak / (1024 * 1024)
+        cuda_peak = get_peak_memory_usage()
+
         elapsed_time = self.end_time - self.start_time
 
         self.logger.info(f"Execution time: {elapsed_time:.2f} seconds")
-        self.logger.info(f"Memory allocated (peak): {peak / 1024**2:.2f} MB")
+        self.logger.info(f"CPU Memory allocated (peak): {cpu_memory:.2f} MB")
+
+        if cuda_peak:
+            self.logger.info(f"CUDA Memory allocated (peak): {cuda_peak:.2f} MB")
