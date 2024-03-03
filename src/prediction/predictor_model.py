@@ -343,14 +343,9 @@ class Forecaster:
             local_scaler_type=self.local_scaler_type,
         )
 
-        static_df = None
-        if self.use_exogenous and len(self.data_schema.static_covariates) > 0:
-            static_df = self.generate_static_exogenous(history)
-
-        self.model.fit(df=history, static_df=static_df)
+        self.model.fit(df=history)
         self._is_trained = True
         self.history = history
-        self.static_df = static_df
 
     def predict(
         self, test_data: pd.DataFrame, prediction_col_name: str
