@@ -1,5 +1,5 @@
 {
-  "history_forecast_ratio": 10,
+  "history_forecast_ratio": 15,
   "lags_forecast_ratio": null,
   "lags": 10,
   "max_steps": 2000,
