@@ -185,6 +185,26 @@ class Forecaster:
 
         frequency = frequency.lower()
         frequency = frequency.split("frequency.")[1]
+        time_dtype = self.data_schema.time_col_dtype.lower()
+
+        if time_dtype == "int":
+            if frequency == "yearly":
+                return 1
+            if frequency == "quarterly":
+                return 4
+            if frequency == "monthly":
+                return 12
+            if frequency == "weekly":
+                return 52
+            if frequency == "daily":
+                return 7
+            if frequency == "hourly":
+                return 24
+            if frequency == "minutely":
+                return 60
+            if frequency == ["secondly"]:
+                return 1
+
         if frequency == "yearly":
             return "Y"
         if frequency == "quarterly":
